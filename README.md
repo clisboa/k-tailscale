@@ -57,7 +57,7 @@ go -C helper test -race ./...
 go -C helper vet ./...
 make test
 python3 -m unittest discover -s tests -p 'test_*.py' -v
-node --test installer/drive.test.mjs
+node --test installer/*.test.mjs
 scripts/build.sh
 scripts/build-helper.sh
 mkdir -p build/upstream

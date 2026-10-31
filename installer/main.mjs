@@ -2,12 +2,18 @@ import { readKobo, loadManifest, installPackage } from './drive.mjs';
 
 const $ = id => document.getElementById(id);
 let device = null, manifest = null, busy = false;
-const guided = typeof window.showDirectoryPicker === 'function' && window.isSecureContext && !new URLSearchParams(location.search).has('manual');
+const manual = new URLSearchParams(location.search).has('manual');
+const guided = typeof window.showDirectoryPicker === 'function' && window.isSecureContext && !manual;
 function message(id, text, kind = '') { $(id).textContent = text; $(id).className = 'status '+kind; }
 function ready() { $('install').disabled = busy || !device || !manifest; $('select').disabled = busy; }
 
 if (!guided) {
   $('step-select').hidden = true; $('step-install').hidden = true; $('step-finish').hidden = true; $('fallback').hidden = false;
+  $('fallback-reason').textContent = manual
+    ? 'You chose manual installation. Download the package below and copy it to your Kobo.'
+    : !window.isSecureContext
+      ? 'Guided folder access needs a secure page. Open the HTTPS installer, or download and copy the package below.'
+      : 'This browser does not provide guided folder access. This is unrelated to whether your Kobo is connected. Use Google Chrome or Microsoft Edge for guided installation, or download and copy the package below.';
 }
 
 async function release() {

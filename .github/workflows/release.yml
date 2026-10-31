@@ -34,7 +34,7 @@ jobs:
           go -C helper vet ./...
           make test
           python3 -m unittest discover -s tests -p 'test_*.py' -v
-          node --test installer/drive.test.mjs
+          node --test installer/*.test.mjs
           git diff --check
         env:
           QT_QPA_PLATFORM: offscreen
