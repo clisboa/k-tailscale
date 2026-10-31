@@ -1,0 +1,69 @@
+name: Release
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: read
+concurrency:
+  group: release
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pages: write
+      id-token: write
+    environment: github-pages
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: helper/go.mod
+          cache-dependency-path: helper/go.sum
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Match tag and release version
+        run: test "$GITHUB_REF_NAME" = "v$(cat VERSION)"
+      - name: Dependencies
+        run: sudo apt-get update && sudo apt-get install -y qtbase5-dev libqt5svg5-dev python3 make g++ procps zbar-tools
+      - name: Tests
+        run: |
+          go -C helper test -race ./...
+          go -C helper vet ./...
+          make test
+          python3 -m unittest discover -s tests -p 'test_*.py' -v
+          node --test installer/drive.test.mjs
+          git diff --check
+        env:
+          QT_QPA_PLATFORM: offscreen
+      - name: Linux root ownership regressions
+        run: scripts/test-linux-root.sh
+      - name: Build native addon and helper
+        run: |
+          scripts/build.sh
+          scripts/build-helper.sh
+      - name: Fetch and verify latest official stable Tailscale
+        run: |
+          mkdir -p build/upstream
+          build/k-tailscale-helper-host fetch-release --directory "$PWD/build/upstream" > build/upstream/artifact.json
+          python3 scripts/package.py
+      - name: Sign release manifest
+        env:
+          ADDON_SIGNING_KEY: ${{ secrets.ADDON_SIGNING_KEY }}
+        run: |
+          test -n "$ADDON_SIGNING_KEY"
+          key_path="$RUNNER_TEMP/k-tailscale-release-key.pem"
+          umask 077
+          printf '%s\n' "$ADDON_SIGNING_KEY" > "$key_path"
+          trap 'rm -f "$key_path"' EXIT
+          python3 scripts/release.py --key "$key_path"
+      - name: Publish release artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/KoboRoot.tgz dist/k-tailscale-update.tgz dist/KoboRoot-uninstall.tgz dist/SHA256SUMS dist/update.json dist/update.json.sig --verify-tag --title "k-tailscale $GITHUB_REF_NAME" --generate-notes
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: dist/site
+      - uses: actions/deploy-pages@v4

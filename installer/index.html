@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta name="description" content="Install Tailscale and a native connection toolbar on your Kobo Libra Colour.">
+  <title>Install k-tailscale</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar"><a class="brand" href="./"><svg class="mark" width="27" height="27" viewBox="0 0 24 24" aria-hidden="true"><circle cx="3" cy="3" r="2.3" fill="currentColor"/><circle cx="12" cy="3" r="2.3" fill="currentColor"/><circle cx="21" cy="3" r="2.3" fill="currentColor"/><circle cx="3" cy="12" r="2.3" fill="currentColor"/><circle cx="12" cy="12" r="2.3" fill="currentColor"/><circle cx="21" cy="12" r="2.3" fill="currentColor"/><circle cx="3" cy="21" r="2.3" fill="currentColor"/><circle cx="12" cy="21" r="2.3" fill="currentColor"/><circle cx="21" cy="21" r="2.3" fill="currentColor"/></svg>k-tailscale</a><a class="source" href="https://github.com/clisboa/k-tailscale" target="_blank" rel="noopener noreferrer">View on GitHub <span aria-hidden="true">↗</span></a></header>
+  <main>
+    <section class="intro" aria-labelledby="title">
+      <p class="eyebrow">TAILSCALE, ON YOUR KOBO</p>
+      <h1 id="title">Your library.<br>Wherever you read.</h1>
+      <p class="lede">Bring your Kobo onto your tailnet. Connect to your library server and manage Tailscale from a native toolbar.</p>
+      <div class="compatibility"><span class="dot"></span><span>Kobo Libra Colour · Firmware 4.46.23852</span></div>
+      <div class="included"><span class="line-icon" aria-hidden="true">↔</span><div><strong>Everything in one package</strong><p>Tailscale, connection controls, and an upstream update checker. You choose when to install updates.</p></div></div>
+      <p class="release" id="release">Loading release information…</p>
+    </section>
+    <section class="installer" aria-labelledby="install-title">
+      <div class="card-heading"><p class="eyebrow">GET CONNECTED</p><h2 id="install-title">Install on your Kobo</h2><p>Keep the Kobo connected until the copy is verified.</p></div>
+      <ol class="steps">
+        <li id="step-connect"><span class="number">1</span><div><h3>Connect your Kobo</h3><p>Plug it into your computer by USB, then tap <strong>Connect</strong> on its screen.</p></div></li>
+        <li id="step-select"><span class="number">2</span><div><h3>Select its drive</h3><p>Choose <strong>KOBOeReader</strong> in the folder picker.</p><button id="select" type="button">Select Kobo drive <span aria-hidden="true">→</span></button><p id="device" class="status" role="status"></p></div></li>
+        <li id="step-install"><span class="number">3</span><div><h3>Copy the installer</h3><p>We’ll check the download, copy it, then verify the file on your Kobo.</p><button id="install" type="button" class="primary" disabled>Install k-tailscale <span aria-hidden="true">↓</span></button><p id="status" class="status" role="status" aria-live="polite"></p><progress id="progress" hidden max="100" value="0" aria-label="Installer download"></progress></div></li>
+        <li id="step-finish"><span class="number">4</span><div><h3>Eject, unplug, and sign in</h3><p>Safely eject the Kobo from your computer and unplug it. Let it restart, open the nine-dot <strong>K-Tailscale</strong> icon beside Search, and tap <strong>Sign in</strong>. Scan the QR with your phone, or open the complete text link. Use <strong>Connect</strong> to resume an existing login.</p></div></li>
+      </ol>
+      <div id="fallback" class="fallback" hidden><h3>Install by copying one file</h3><p>For guided drive access, use Chrome or Edge. You can also download the package and copy it yourself:</p><a class="button primary" id="download" href="KoboRoot.tgz" download>Download KoboRoot.tgz <span aria-hidden="true">↓</span></a><p>If <code>.kobo/KoboRoot.tgz</code> already exists, finish that pending update before copying this file.</p><ol><li>Copy it into the hidden <strong>.kobo</strong> folder on the Kobo drive.</li><li>Keep the filename <strong>KoboRoot.tgz</strong> and leave it packed.</li><li>Safely eject and unplug. Let the Kobo restart.</li>
+            <li>Open <strong>K-Tailscale</strong> from the nine-dot toolbar icon, tap <strong>Sign in</strong>, and scan its QR with your phone or open the complete text link. Use <strong>Connect</strong> to resume an existing login.</li></ol><p class="small">On a Mac, press ⌘ ⇧ . in Finder to show hidden folders.</p></div>
+      <p class="privacy">Drive access stays in your browser. Your books and account details stay on the Kobo.</p>
+    </section>
+  </main>
+  <footer><span><a href="?manual=1">Manual installation</a> · An independent, open-source Kobo addon.</span><span>Apache 2.0 · Inspired by <a href="https://github.com/andronedev/relio">Relio</a></span></footer>
+  <script type="module" src="main.mjs"></script>
+</body>
+</html>

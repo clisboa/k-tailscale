@@ -1,0 +1,3 @@
+# Preserve the exact pinned upstream QR library, including its formatting.
+src/vendor/qrcodegen.cc -whitespace
+src/vendor/qrcodegen.hpp -whitespace

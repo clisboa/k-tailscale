@@ -1,0 +1,29 @@
+name: Tests
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: helper/go.mod
+          cache-dependency-path: helper/go.sum
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: sudo apt-get update && sudo apt-get install -y qtbase5-dev python3 make g++ procps zbar-tools
+      - run: |
+          go -C helper test -race ./...
+          go -C helper vet ./...
+          make test
+          python3 -m unittest discover -s tests -p 'test_*.py' -v
+          node --test installer/drive.test.mjs
+          git diff --check
+        env:
+          QT_QPA_PLATFORM: offscreen
+
+      - name: Linux root ownership regressions
+        run: scripts/test-linux-root.sh
