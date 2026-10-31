@@ -1,0 +1,45 @@
+name: Installer page
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'installer/**'
+      - 'scripts/build-site.py'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: release
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment: github-pages
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: helper/go.mod
+          cache-dependency-path: helper/go.sum
+      - name: Download the existing published installer
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p dist
+          gh release download "v$(cat VERSION)" --repo "$GITHUB_REPOSITORY" --dir dist --pattern KoboRoot.tgz --pattern SHA256SUMS
+          cd dist
+          sha256sum --check --ignore-missing SHA256SUMS
+      - name: Verify the installer and build the static site
+        run: |
+          mkdir -p build
+          go -C helper build -trimpath -buildvcs=false -o "$GITHUB_WORKSPACE/build/k-tailscale-helper-host" ./cmd/k-tailscale-helper
+          python3 scripts/build-site.py
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: dist/site
+      - uses: actions/deploy-pages@v4

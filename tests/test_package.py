@@ -127,6 +127,10 @@ class Packages(unittest.TestCase):
         self.assertEqual(metadata['tailscale'],'1.104.4')
         self.assertNotIn(str(self.root),json.dumps(metadata))
         self.assertFalse(list(site.glob('*.test.*')))
+        for name in ['widget-connected.png', 'widget-updates.png']:
+            self.assertEqual((site/'images'/name).read_bytes(),
+                             (PROJECT/'installer/images'/name).read_bytes())
+        self.assertFalse((site/'images/README.md').exists())
 
     def test_rejects_path_traversal(self):
         self.package()

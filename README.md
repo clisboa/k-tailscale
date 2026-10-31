@@ -4,6 +4,12 @@ Tailscale on a Kobo Libra Colour, with a native toolbar widget for connecting, s
 
 **Supported:** Kobo Libra Colour (model 390), firmware **4.46.23852**, Qt 5.2.1, ARMv7 hard float. Other devices and firmware are refused by the installer. NickelMenu is optional.
 
+| Connection controls | Software updates |
+| --- | --- |
+| [![Connected widget with Disconnect, Updates and Sign out controls](installer/images/widget-connected.png)](installer/images/widget-connected.png) | [![Expanded Updates panel showing the installed and latest Tailscale and addon versions](installer/images/widget-updates.png)](installer/images/widget-updates.png) |
+
+Native UI previews with example device details. Select either image to view it at full size.
+
 ## Install
 
 Use the [guided installer](https://clisboa.github.io/k-tailscale/) in Chrome or Edge, or download `KoboRoot.tgz` from [Releases](https://github.com/clisboa/k-tailscale/releases/latest).

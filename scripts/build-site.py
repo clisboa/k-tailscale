@@ -25,6 +25,8 @@ def main():
     output.mkdir(parents=True, exist_ok=True)
     for name in ['index.html', 'style.css', 'drive.mjs', 'main.mjs']:
         shutil.copyfile(root/'installer'/name, output/name)
+    shutil.copytree(root/'installer/images', output/'images', dirs_exist_ok=True,
+                    ignore=shutil.ignore_patterns('README.md'))
     shutil.copyfile(package, output/'KoboRoot.tgz')
     with tarfile.open(package) as archive:
         upstream = json.loads(archive.extractfile(PAYLOAD+'release.json').read())

@@ -2,6 +2,15 @@
 
 The repository is `clisboa/k-tailscale`. GitHub Pages serves the static installer; GitHub Releases serves the three archives, checksums and signed addon manifest.
 
+Changes to the installer page and its shared widget previews on `main` deploy
+through the **Installer page** workflow. It downloads the existing `v$(cat VERSION)`
+installer, checks its published SHA256 and verifies its package scope and official
+Tailscale signatures before rebuilding the static site. It does not create a
+release, change its archives, or use the addon signing key. The workflow can also
+be run manually. Keep `VERSION` at a published release for page-only deployments;
+an unreleased version is refused by the release download. Pages and release
+deployments share a concurrency group to avoid simultaneous publication.
+
 1. Update `VERSION` with a numeric three-part version and run all tests in README.
 2. Build the Qt library and host/ARM helper, fetch the current official stable Tailscale artifact with `fetch-release`, and build/verify all archives.
 3. Run `python3 scripts/release.py --key /secure/location/addon-signing-key.pem` to sign `dist/update.json`, verify its signature and build `dist/site`. The key must be private (0600), outside the repository, and match `helper/addon-public.pem`.
@@ -14,7 +23,7 @@ The initial USB archive bundles current official Tailscale, whose signature is c
 
 The current addon trust key has no online rollover mechanism. To replace it, distribute a reviewed complete USB installer with the new public key; a compromised project key must not authorize its own replacement. Upstream Tailscale trust roots are separate and come from its pinned official verification library.
 
-Both workflows run `scripts/test-linux-root.sh` in addition to ordinary Go race/vet checks. This builds the helper tests and runs the full binary as root in a disposable Linux container with networking disabled, a read-only root filesystem and a writable temporary test directory. The factory ownership regressions in `helper/ownership_linux_test.go` reproduce the official firmware metadata without changing the host filesystem; ordinary non-root runs skip those cases.
+The test and release workflows run `scripts/test-linux-root.sh` in addition to ordinary Go race/vet checks. This builds the helper tests and runs the full binary as root in a disposable Linux container with networking disabled, a read-only root filesystem and a writable temporary test directory. The factory ownership regressions in `helper/ownership_linux_test.go` reproduce the official firmware metadata without changing the host filesystem; ordinary non-root runs skip those cases.
 
 Before an addon release, refresh the embedded updater TLS roots from curl's
 Mozilla bundle at https://curl.se/ca/cacert.pem and fetch its published checksum
