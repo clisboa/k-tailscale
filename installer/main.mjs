@@ -28,10 +28,16 @@ $('select').addEventListener('click', async () => {
   try {
     const root = await window.showDirectoryPicker({ id: 'k-tailscale-kobo', mode: 'readwrite' });
     device = await readKobo(root);
+    $('select').textContent = 'Kobo drive selected ✓';
     message('device', `${device.model} · Firmware ${device.firmware}`, 'success');
     $('step-connect').classList.add('done'); $('step-select').classList.add('done');
     message('status', '');
-  } catch (error) { device = null; if (error.name !== 'AbortError') message('device', error.message, 'error'); }
+  } catch (error) {
+    device = null; $('select').textContent = 'Select Kobo drive →';
+    message('device', error.name === 'AbortError'
+      ? 'Folder selection was cancelled. No files were written. Select the KOBOeReader drive to try again.'
+      : error.message, error.name === 'AbortError' ? '' : 'error');
+  }
   ready();
 });
 
