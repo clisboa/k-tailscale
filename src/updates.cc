@@ -13,10 +13,13 @@ Updates::Updates(const QString &helper,QObject *parent):QObject(parent),helper_(
         else if(exit!=QProcess::NormalExit||code!=0)message_=doc.isObject()?doc.object().value("error").toString():"Could not check updates. Try again on Wi-Fi.";
         else if(verb_=="progress"){if(doc.isObject())status_.insert("progress",doc.object().value("progress"));}
         else if(!check){if(doc.isObject()&&doc.object().contains("current")){status_=doc.object();message_.clear();}else message_="Invalid update status response.";}
-        if(changed)changed();
-        if(check)load();
+        // Install completion can request status while a progress response is
+        // still in flight. Fetch the authoritative state before exposing idle
+        // controls, rather than dropping that refresh and offering Install again.
+        if(check||pendingStatus_)load();
+        else if(changed)changed();
     });
-    auto failed=[this](QProcess::ProcessError e){if(e==QProcess::FailedToStart){deadline_.stop();message_="Update helper is unavailable. Retry setup.";if(changed)changed();}};
+    auto failed=[this](QProcess::ProcessError e){if(e==QProcess::FailedToStart){deadline_.stop();pendingStatus_=false;message_="Update helper is unavailable. Retry setup.";if(changed)changed();}};
 #if QT_VERSION >= QT_VERSION_CHECK(5,6,0)
     QObject::connect(&process_,&QProcess::errorOccurred,this,failed);
 #else
@@ -40,7 +43,7 @@ void Updates::watch(bool eligible){
 bool Updates::check(bool automatic){const bool started=launch(automatic?"check-auto":"check");if(started&&automatic)lastAutoCheck_.start();return started;}
 bool Updates::progress(){return launch("progress");}
 bool Updates::setAutomatic(bool enabled){return launch(enabled?"checks-on":"checks-off");}
-bool Updates::load(){return launch("status");}
+bool Updates::load(){if(busy()){pendingStatus_=true;return true;}pendingStatus_=false;return launch("status");}
 bool Updates::launch(const QString &verb){if(busy())return false;verb_=verb;output_.clear();oversized_=false;process_.start(helper_,QStringList{verb});deadline_.start(90000);if(changed)changed();return true;}
 void Updates::drain(){while(process_.bytesAvailable()>0){const QByteArray data=process_.read(4096);if(output_.size()+data.size()>65536){oversized_=true;process_.kill();return;}output_.append(data);}}
 }

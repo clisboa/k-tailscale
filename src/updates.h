@@ -29,6 +29,6 @@ private:
     QElapsedTimer lastAutoCheck_;
     QByteArray output_;
     QJsonObject status_;
-    bool watching_=false, oversized_=false;
+    bool watching_=false, oversized_=false, pendingStatus_=false;
 };
 }

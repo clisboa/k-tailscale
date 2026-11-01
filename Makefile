@@ -12,7 +12,14 @@ ARM_OBJECTS = $(ARM_SOURCES:src/%.cc=build/arm/%.o)
 ARM_MOC = $(if $(wildcard src/image_plugin.h),build/arm/image_plugin.moc.o)
 
 .PHONY: test test-core test-actions test-client test-panel test-recovery test-injector test-widget test-qr
-test: test-qr test-core test-actions test-client test-panel test-progress test-recovery test-injector test-widget
+test: test-qr test-core test-actions test-client test-panel test-progress test-updates test-recovery test-injector test-widget
+
+build/test_updates: tests/test_updates.cc src/updates.cc src/updates.h | build
+	$(HOST_CXX) $(HOST_FLAGS) tests/test_updates.cc src/updates.cc -o $@ $(HOST_LIBS)
+
+.PHONY: test-updates
+test-updates: build/test_updates
+	./build/test_updates
 
 build/test_progress: tests/test_progress.cc src/panel.cc $(QR_SOURCES) $(QR_HEADERS) src/panel.h src/popup_geometry.cc src/button_icons.cc src/touch_button.h src/button_icons.h src/controller.cc src/controller.h src/updates.cc src/client.cc src/actions.cc src/model.cc src/log.cc | build
 	$(HOST_CXX) $(HOST_FLAGS) tests/test_progress.cc src/panel.cc $(QR_SOURCES) src/popup_geometry.cc src/button_icons.cc src/controller.cc src/updates.cc src/client.cc src/actions.cc src/model.cc src/log.cc -o $@ $(HOST_LIBS)

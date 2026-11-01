@@ -316,6 +316,29 @@ int main(int argc,char **argv){
     installTs->click();CHECK(controller.busy());panel.close();CHECK(controller.busy());CHECK(waitFor([&]{return !controller.busy();}));
     CHECK(read(last).trimmed()=="install"&&controller.notice().contains("Tailscale update installed"));
     panel.open();CHECK(!section->isVisible());
+    // One addon install must reveal Restart even if its final status refresh
+    // overlaps a still-running progress query.
+    const QString addonHold=dir.path()+"/addon-hold",addonStarted=dir.path()+"/addon-started";
+    const QString progressHold=dir.path()+"/progress-hold",progressStarted=dir.path()+"/progress-started";
+    f.setFileName(helper);CHECK(f.open(QIODevice::WriteOnly|QIODevice::Append));
+    f.write(("\nif [ \"$1\" = install-addon ]; then touch '"+addonStarted+"'; while [ -f '"+addonHold+"' ]; do sleep 0.02; done; exit 0; fi\n").toUtf8());f.close();
+    f.setFileName(updater);CHECK(f.open(QIODevice::WriteOnly|QIODevice::Append));
+    f.write(("\nif [ \"$1\" = progress ]; then touch '"+progressStarted+"'; while [ -f '"+progressHold+"' ]; do sleep 0.02; done; echo '{\"progress\":\"Installing addon\"}'; fi\n").toUtf8());f.close();
+    writeStatus(normalUpdates);CHECK(waitFor([&]{return !controller.updates().busy();}));
+    updateButton->click();auto installAddon=panel.findChild<QPushButton*>("tailuiInstallAddon");
+    CHECK(waitFor([&]{return installAddon->isVisible()&&installAddon->isEnabled();}));
+    for(const QString &path:QStringList{addonHold,progressHold}){f.setFileName(path);CHECK(f.open(QIODevice::WriteOnly));f.close();}
+    const int addonCallsBefore=read(calls).split('\n').count("install-addon");
+    installAddon->click();CHECK(waitFor([&]{return controller.busy()&&QFile::exists(addonStarted);}));
+    controller.refresh();CHECK(waitFor([&]{return controller.updates().busy()&&QFile::exists(progressStarted);}));
+    QJsonObject installedAddon=QJsonDocument::fromJson(normalUpdates).object();installedAddon.insert("restart",true);installedAddon.insert("addon_available",false);
+    f.setFileName(updateStatus);CHECK(f.open(QIODevice::WriteOnly|QIODevice::Truncate));f.write(QJsonDocument(installedAddon).toJson());f.close();
+    CHECK(QFile::remove(addonHold));CHECK(waitFor([&]{return !controller.busy();}));
+    CHECK(QFile::remove(progressHold));
+    CHECK(waitFor([&]{return !controller.updates().busy()&&restart->isVisible();}));
+    CHECK(!installAddon->isVisible()&&read(calls).split('\n').count("install-addon")==addonCallsBefore+1);
+    writeStatus(normalUpdates);CHECK(waitFor([&]{return !controller.updates().busy()&&!restart->isVisible();}));
+    panel.close();panel.open();
     // Finish the Qt 5.2 fallback mouse-suppression window after button touches.
     spin(700);
     // Outside mouse dismissal must not activate the library underneath.
