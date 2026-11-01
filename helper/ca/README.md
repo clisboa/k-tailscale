@@ -10,7 +10,7 @@ signing public key remain separate from this TLS trust store.
 - Published checksum: https://curl.se/ca/cacert.pem.sha256
 - Extraction information: https://curl.se/docs/caextract.html
 - Mozilla certificate data as of: 2026-10-20 13:32:40 GMT
-- Retrieved and checksum-verified: 2026-10-31
+- Retrieved and checksum-verified: 2026-11-01 (unchanged bundle)
 - SHA256 of this complete PEM file: `796f1389bfea13c0ed78f663b765baaff54a508e5483786bd6ece73c5e3e3cbe`
 - Size: 200116 bytes; 118 certificates.
 - License: Mozilla Public License 2.0, included in `MPL-2.0.txt`.

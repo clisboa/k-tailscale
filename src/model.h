@@ -19,6 +19,6 @@ constexpr int kResponseLimit = 1024 * 1024;
 bool decodeResponse(const QByteArray &wire, QByteArray *body, QString *error);
 Status parseStatus(const QByteArray &json);
 QString stateLabel(State state);
-bool wifiAvailable(const QByteArray &routes);
+bool wifiAvailable(const QByteArray &routes, const QByteArray &wireless = QByteArray());
 
 } // namespace tailui

@@ -20,6 +20,16 @@ import (
 func TestMain(m *testing.M) {
 	name := filepath.Base(os.Args[0])
 	if name == "tailscale" {
+		if len(os.Args) >= 4 && os.Args[2] == "set" && strings.HasPrefix(os.Args[1], "--socket=") {
+			socket := strings.TrimPrefix(os.Args[1], "--socket=")
+			if err := os.WriteFile(socket+".set", []byte(strings.Join(os.Args[1:], "\n")), 0600); err != nil {
+				os.Exit(8)
+			}
+			if _, err := os.Stat(socket + ".fail-set"); err == nil {
+				os.Exit(7)
+			}
+			os.Exit(0)
+		}
 		if len(os.Args) == 3 && os.Args[2] == "logout" && strings.HasPrefix(os.Args[1], "--socket=") {
 			socket := strings.TrimPrefix(os.Args[1], "--socket=")
 			if _, err := os.Stat(socket + ".fail"); err == nil {
@@ -52,6 +62,9 @@ func TestMain(m *testing.M) {
 				socket = strings.TrimPrefix(a, "--socket=")
 			}
 		}
+		if err := os.WriteFile(socket+".logsdir", []byte(os.Getenv("TS_LOGS_DIR")), 0600); err != nil {
+			os.Exit(9)
+		}
 		_ = os.Remove(socket)
 		listener, err := net.Listen("unix", socket)
 		if err != nil {
@@ -64,6 +77,58 @@ func TestMain(m *testing.M) {
 		os.Exit(0)
 	}
 	os.Exit(m.Run())
+}
+
+func TestServicePreferencesUseClaraKernelWithoutBooksAccess(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("native executable fixture")
+	}
+	spec, err := bundledTUN()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct{ name, kernel, extra string }{
+		{"Clara", spec.Kernel, "\n--netfilter-mode=off"},
+		{"other kernel", "4.9-libra", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			p := Paths{Runtime: root, Socket: filepath.Join(root, "socket")}
+			if err := os.MkdirAll(filepath.Join(root, "bin"), 0700); err != nil {
+				t.Fatal(err)
+			}
+			exe, err := os.Executable()
+			if err != nil {
+				t.Fatal(err)
+			}
+			cli := filepath.Join(root, "bin/tailscale")
+			if err := copyPrivate(exe, cli, 128<<20); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Chmod(cli, 0755); err != nil {
+				t.Fatal(err)
+			}
+			s := &osService{paths: p, kernelRelease: func() (string, error) { return tc.kernel, nil }}
+			if err := s.DisableNativeUpdates(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			got, err := os.ReadFile(p.Socket + ".set")
+			want := "--socket=" + p.Socket + "\nset\n--auto-update=false" + tc.extra
+			if err != nil || string(got) != want {
+				t.Fatalf("wrong masked preferences: %q, %v", got, err)
+			}
+			if err := os.WriteFile(p.Socket+".fail-set", nil, 0600); err != nil {
+				t.Fatal(err)
+			}
+			if err := s.DisableNativeUpdates(context.Background()); err == nil {
+				t.Fatal("preference command failure ignored")
+			}
+			s.kernelRelease = func() (string, error) { return "", os.ErrPermission }
+			if err := s.DisableNativeUpdates(context.Background()); err == nil {
+				t.Fatal("kernel detection failure ignored")
+			}
+		})
+	}
 }
 
 func TestOSServiceLogoutUsesSocketAndPropagatesFailure(t *testing.T) {

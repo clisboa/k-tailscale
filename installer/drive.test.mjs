@@ -40,6 +40,18 @@ test('detect supported Kobo without retaining its serial', async () => {
   assert.equal(device.model, 'Kobo Libra Colour'); assert.equal(device.firmware, '4.46.23852');
   assert.equal(JSON.stringify(device).includes('00000000-'), false);
 });
+test('detect Clara HD on its supported firmware', async () => {
+  const { root } = kobo('a,b,4.38.23852,d,e,00000000-0000-0000-0000-000000000376');
+  const device = await readKobo(root);
+  assert.equal(device.model, 'Kobo Clara HD');
+  assert.equal(device.firmware, '4.38.23852');
+  assert.equal(JSON.stringify(device).includes('00000000-'), false);
+});
+test('reject cross-paired firmware and unknown Clara firmware', async () => {
+  for (const version of ['a,b,4.46.23852,d,e,376', 'a,b,4.38.23852,d,e,390', 'a,b,4.99.0,d,e,376']) {
+    await assert.rejects(readKobo(kobo(version).root), /firmware/i);
+  }
+});
 test('reject wrong drive, model and firmware', async () => {
   await assert.rejects(readKobo(new FakeDirectory()));
   for (const version of ['a,b,4.99.0,d,e,390', 'a,b,4.46.23852,d,e,393']) await assert.rejects(readKobo(kobo(version).root));

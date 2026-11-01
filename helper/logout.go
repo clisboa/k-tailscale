@@ -10,6 +10,11 @@ import (
 // SignOut serializes credential changes with setup, connection and updates.
 // Only tailscaled manages the profile; no credential files are removed here.
 func (e *Engine) SignOut(ctx context.Context) error {
+	if installed, err := e.ramInstalled(); err != nil {
+		return err
+	} else if e.paths.ramMode() && !installed {
+		return e.legacyEngine().SignOut(ctx)
+	}
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 	unlock, err := acquireActionLock(e.paths.Lock)
@@ -38,7 +43,7 @@ func (e *Engine) SignOut(ctx context.Context) error {
 	if err := e.validateRuntimeDirectories(); err != nil {
 		return err
 	}
-	if _, err := e.service.Version(ctx, filepath.Join(e.paths.Runtime, "bin/tailscale")); err != nil {
+	if _, err := e.service.Version(ctx, filepath.Join(e.paths.binaryDir(), "tailscale")); err != nil {
 		return err
 	}
 	running, err := e.service.Running(ctx)

@@ -6,6 +6,7 @@ import json
 import pathlib
 import subprocess
 import tempfile
+import importlib.util
 from package_scope import release_version
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -27,6 +28,10 @@ def main():
                        ('remove','KoboRoot-uninstall.tgz')]:
         subprocess.run(['python3', str(ROOT/'scripts/verify-package.py'),
                         '--kind',kind,str(ROOT/'dist'/name)], check=True)
+    source_spec = importlib.util.spec_from_file_location('tun_build',ROOT/'scripts/build-tun.py')
+    source_module = importlib.util.module_from_spec(source_spec)
+    source_spec.loader.exec_module(source_module)
+    source_module.verify_source_bundle(ROOT,ROOT/'dist/k-tailscale-tun-source.tar.gz')
     public = subprocess.check_output(['openssl','pkey','-in',str(key),'-pubout'])
     if public.strip() != (ROOT/'helper/addon-public.pem').read_bytes().strip():
         parser.error('Signing key does not match the embedded public key')

@@ -19,9 +19,10 @@ import (
 )
 
 type osService struct {
-	paths   Paths
-	machine elf.Machine
-	class   elf.Class
+	paths         Paths
+	machine       elf.Machine
+	class         elf.Class
+	kernelRelease func() (string, error)
 }
 
 type boundedOutput struct{ data []byte }
@@ -124,7 +125,14 @@ func (s *osService) pids(ctx context.Context) ([]int, error) {
 		if err != nil {
 			return nil, err
 		}
-		if strings.TrimSuffix(executable, " (deleted)") != filepath.Join(s.paths.Runtime, "bin/tailscaled") {
+		actual := strings.TrimSuffix(executable, " (deleted)")
+		owned := actual == filepath.Join(s.paths.binaryDir(), "tailscaled")
+		if s.paths.ramMode() && actual == filepath.Join(s.paths.legacyBinDir(), "tailscaled") {
+			_, layoutErr := os.Lstat(s.paths.layoutPath())
+			_, migrationErr := os.Lstat(filepath.Join(s.paths.Runtime, "ram-setup.json"))
+			owned = os.IsNotExist(layoutErr) || migrationErr == nil
+		}
+		if !owned {
 			return nil, errors.New("another Tailscale daemon uses an unrecognized executable")
 		}
 		pids = append(pids, pid)
@@ -166,6 +174,9 @@ func (s *osService) Start(ctx context.Context) error {
 	} else if running {
 		return nil
 	}
+	if err := s.prepareTUN(ctx); err != nil {
+		return err
+	}
 	if err := ensureDirectory(filepath.Dir(s.paths.Socket), 0700); err != nil {
 		return err
 	}
@@ -174,7 +185,15 @@ func (s *osService) Start(ctx context.Context) error {
 		return err
 	}
 	defer null.Close()
-	command := exec.Command(filepath.Join(s.paths.Runtime, "bin/tailscaled"), "--statedir="+filepath.Join(s.paths.Runtime, "state"), "--socket="+s.paths.Socket)
+	command := exec.Command(filepath.Join(s.paths.binaryDir(), "tailscaled"),
+		"--statedir="+filepath.Join(s.paths.Runtime, "state"), "--socket="+s.paths.Socket)
+	if s.paths.ramMode() {
+		logs := filepath.Join(s.paths.RAM, "logs")
+		if err := ensureDirectory(logs, 0700); err != nil {
+			return err
+		}
+		command.Env = append(os.Environ(), "TS_LOGS_DIR="+logs)
+	}
 	command.Dir = "/"
 	command.Stdin = null
 	command.Stdout = null
@@ -229,18 +248,43 @@ func (s *osService) Healthy(ctx context.Context, version string) error {
 		}
 		select {
 		case <-ctx.Done():
-			return errors.New("updated daemon did not become ready")
+			return errors.New("Tailscale daemon did not become ready")
 		case <-time.After(100 * time.Millisecond):
 		}
 	}
 }
 func (s *osService) DisableNativeUpdates(ctx context.Context) error {
-	_, err := commandOutput(ctx, filepath.Join(s.paths.Runtime, "bin/tailscale"), "--socket="+s.paths.Socket, "set", "--auto-update=false")
+	kernel, err := s.runningKernel()
+	if err != nil {
+		return fmt.Errorf("read kernel capabilities: %w", err)
+	}
+	spec, err := bundledTUN()
+	if err != nil {
+		return err
+	}
+	args := []string{"--socket=" + s.paths.Socket, "set", "--auto-update=false"}
+	// The supported Clara kernel has CONFIG_NETFILTER disabled. Match the
+	// pinned kernel without reading the exported books partition. A masked
+	// set preserves identity, WantRunning and all other user preferences.
+	if kernel == spec.Kernel {
+		if mode := supportedDevices[spec.Model].netfilterMode; mode != "" {
+			args = append(args, "--netfilter-mode="+mode)
+		}
+	}
+	_, err = commandOutput(ctx, filepath.Join(s.paths.binaryDir(), "tailscale"), args...)
 	return err
 }
 
+func (s *osService) runningKernel() (string, error) {
+	if s.kernelRelease != nil {
+		return s.kernelRelease()
+	}
+	data, err := os.ReadFile("/proc/sys/kernel/osrelease")
+	return strings.TrimSpace(string(data)), err
+}
+
 func (s *osService) Logout(ctx context.Context) error {
-	_, err := commandOutput(ctx, filepath.Join(s.paths.Runtime, "bin/tailscale"), "--socket="+s.paths.Socket, "logout")
+	_, err := commandOutput(ctx, filepath.Join(s.paths.binaryDir(), "tailscale"), "--socket="+s.paths.Socket, "logout")
 	return err
 }
 
@@ -250,7 +294,17 @@ func DefaultEngine() (*Engine, error) {
 		return nil, err
 	}
 	p := Paths{Runtime: "/usr/local/tailscale-runtime", Payload: "/mnt/onboard/.adds/k-tailscale/install", Helpers: "/usr/local/tailscale-ui", Base: "/usr/local/tailscale", Rules: "/etc/udev/rules.d/99-k-tailscale.rules", Lock: "/tmp/kobo-tailscale-connect.lock", Version: "/mnt/onboard/.kobo/version", ServiceLock: "/tmp/k-tailscale-service.lock", Links: "/usr/bin", Socket: "/var/run/tailscale/tailscaled.sock"}
+	p.Books = "/mnt/onboard/.adds/k-tailscale/store"
+	p.RAM = "/tmp/k-tailscale-runtime"
+	p.BooksMount = "/mnt/onboard"
+	p.USBScript = "/usr/local/Kobo/udev/usb"
 	p.SystemRoot = "/"
+	tunSpec, err := bundledTUN()
+	if err != nil {
+		return nil, err
+	}
+	p.TUNDevice = "/dev/net/tun"
+	p.TUNModule = "/" + tunSpec.InstallPath
 	p.CoreLink = "/usr/local/k-tailscale/helper"
 	p.CandidateHelper, err = os.Executable()
 	if err != nil {
@@ -263,11 +317,18 @@ func DefaultEngine() (*Engine, error) {
 	return &Engine{paths: p, upstream: u, service: &osService{paths: p}, free: freeBytes, eligibility: deviceInstallAllowed, addon: addon}, nil
 }
 func (e *Engine) StartService(ctx context.Context) error {
+	if e.paths.ramMode() {
+		return e.startRAMService(ctx)
+	}
 	unlock, err := acquireServiceLock(ctx, e.paths.ServiceLock)
 	if err != nil {
 		return err
 	}
 	defer unlock()
+	return e.startSystemServiceLocked(ctx)
+}
+
+func (e *Engine) startSystemServiceLocked(ctx context.Context) error {
 	current, err := e.recognizedRuntime()
 	if err != nil {
 		return err

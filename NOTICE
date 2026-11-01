@@ -34,3 +34,12 @@ subject to the following conditions:
 
 The QR notice is also retained in libtailscaleui.so so it accompanies
 the addon update and minimal removal archives.
+
+Optional Kobo Clara HD TUN driver
+
+The Linux TUN/TAP driver is built from Kobo's published Linux 4.1.15 sources
+and is licensed under GPL version 2. Its full license accompanies the public
+module at .adds/k-tailscale/kernel/clara-hd/COPYING. Binary releases include
+k-tailscale-tun-source.tar.gz containing the complete corresponding upstream
+source, configuration, manifest and reproducible build instructions. See
+kernel/README.md and https://github.com/kobolabs/Kobo-Reader.

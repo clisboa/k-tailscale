@@ -63,7 +63,15 @@ func setupFixture(t *testing.T) (*Engine, *fixtureService) {
 		t.Fatal(err)
 	}
 	for _, name := range []string{"runtime-boot.sh", "connect-root.sh", "login-root.sh", "diagnose-root.sh"} {
-		if err := os.WriteFile(filepath.Join(p.Helpers, name), []byte("#!/bin/sh\n# "+name+"\n"), 0755); err != nil {
+		data := "#!/bin/sh\n# " + name + "\n"
+		if name == "connect-root.sh" {
+			template, err := os.ReadFile("../scripts/connect-root.sh")
+			if err != nil {
+				t.Fatal(err)
+			}
+			data = string(template)
+		}
+		if err := os.WriteFile(filepath.Join(p.Helpers, name), []byte(data), 0755); err != nil {
 			t.Fatal(err)
 		}
 	}

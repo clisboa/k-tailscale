@@ -1,0 +1,15 @@
+{
+  "schema": 1,
+  "model": "376",
+  "firmware": "4.38.23852",
+  "kernel": "4.1.15-00136-g12655eaaef89",
+  "vermagic": "4.1.15-00136-g12655eaaef89 SMP preempt mod_unload modversions ARMv7 p2v8",
+  "module_layout": "0xb005e3c1",
+  "size": 34476,
+  "sha256": "2e1aa66b989f3ae1717fb2866d878a328ae598824ac6c9099d66e9963adabc50",
+  "install_path": "mnt/onboard/.adds/k-tailscale/kernel/clara-hd/tun.ko",
+  "source_url": "https://raw.githubusercontent.com/kobolabs/Kobo-Reader/master/hw/imx6sll-clara/kernel.tar.bz2",
+  "source_sha256": "b504fe838004476890a4246d93bd5e1fb94af0359515b1645ae385efae7b3667",
+  "toolchain_image": "ghcr.io/pgaskin/nickeltc@sha256:3296eb400d270cfd26f5773ab09625d4469f85680b3a191951dfb78d8ade7840",
+  "config_sha256": "b4c408126242cfbe2471285ba4b883f309fc91d1e2681cfe75e5fd3646635432"
+}

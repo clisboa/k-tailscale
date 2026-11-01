@@ -30,6 +30,29 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		}
 		return 0
 	}
+	if args[0] == "verify-tun-module" {
+		flags := flag.NewFlagSet("verify-tun-module", flag.ContinueOnError)
+		flags.SetOutput(stderr)
+		module := flags.String("module", "", "built TUN module")
+		if flags.Parse(args[1:]) != nil {
+			return 2
+		}
+		if flags.NArg() != 0 || *module == "" {
+			return usage()
+		}
+		spec, err := bundledTUN()
+		if err == nil {
+			err = validateTUNFile(*module, spec)
+		}
+		if err != nil {
+			fmt.Fprintln(stderr, err)
+			return 1
+		}
+		if json.NewEncoder(stdout).Encode(spec) != nil {
+			return 1
+		}
+		return 0
+	}
 	if args[0] == "verify-payload" {
 		flags := flag.NewFlagSet("verify-payload", flag.ContinueOnError)
 		flags.SetOutput(stderr)
@@ -61,7 +84,7 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		}
 		return 0
 	}
-	if len(args) == 1 && (args[0] == "logout" || args[0] == "prepare" || args[0] == "service-start" || args[0] == "status" || args[0] == "check" || args[0] == "check-auto" || args[0] == "install" || args[0] == "recover" || args[0] == "install-addon" || args[0] == "recover-files" || args[0] == "checks-on" || args[0] == "checks-off" || args[0] == "progress") {
+	if len(args) == 1 && koboCommand(args[0]) {
 		if runtime.GOOS != "linux" || os.Geteuid() != 0 {
 			_ = json.NewEncoder(stdout).Encode(map[string]string{"error": "This command runs only on the Kobo as root."})
 			return 1
@@ -69,9 +92,22 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		syscall.Umask(0077)
 		ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 		defer cancel()
+		if args[0] == "wifi-ready" {
+			if wifiPresent() {
+				return 0
+			}
+			fmt.Fprintln(stderr, "Connect Wi-Fi using the Kobo's Wi-Fi control, then retry.")
+			return 1
+		}
 		engine, err := DefaultEngine()
 		if err == nil {
 			switch args[0] {
+			case "storage-report":
+				err = engine.StorageReport(ctx)
+			case "usb-begin":
+				err = engine.BeginUSB(ctx)
+			case "usb-end":
+				err = engine.EndUSB()
 			case "logout":
 				err = engine.SignOut(ctx)
 			case "progress":
@@ -89,6 +125,7 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 				err = engine.RecoverFiles(ctx)
 			case "prepare":
 				err = engine.Prepare(ctx)
+				engine.reportSetup(ctx, err)
 			case "service-start", "recover":
 				err = engine.StartService(ctx)
 			case "install-addon":
@@ -155,4 +192,12 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	return 0
+}
+
+func koboCommand(name string) bool {
+	switch name {
+	case "logout", "prepare", "service-start", "status", "check", "check-auto", "install", "recover", "install-addon", "recover-files", "checks-on", "checks-off", "progress", "usb-begin", "usb-end", "storage-report", "wifi-ready":
+		return true
+	}
+	return false
 }

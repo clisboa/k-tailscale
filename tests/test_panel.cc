@@ -125,7 +125,9 @@ int main(int argc,char **argv){
     const QString updater=dir.path()+"/updater", updateCalls=dir.path()+"/update-calls", updateStatus=dir.path()+"/update-status";
     f.setFileName(updateStatus);CHECK(f.open(QIODevice::WriteOnly));f.write("{\"automatic\":true,\"current\":\"1.104.4\",\"latest\":\"1.104.6\",\"available\":true,\"addon_current\":\"0.1.0\",\"addon_latest\":\"0.2.0\",\"addon_available\":true,\"can_install\":true}");f.close();
     f.setFileName(updater);CHECK(f.open(QIODevice::WriteOnly));f.write(("#!/bin/sh\necho \"$1\" >> '"+updateCalls+"'\ncase \"$1\" in checks-off) sed -i 's/\"automatic\":true/\"automatic\":false/' '"+updateStatus+"';; checks-on) sed -i 's/\"automatic\":false/\"automatic\":true/' '"+updateStatus+"';; status) cat '"+updateStatus+"';; check*) sleep 0.03; echo '{}';; esac\n").toUtf8());f.close();CHECK(f.setPermissions(QFile::ReadOwner|QFile::WriteOwner|QFile::ExeOwner));
-    tailui::Controller controller(dir.path()+"/socket",helper,route,nullptr,updater);
+    const QString wireless=dir.path()+"/wireless";
+    f.setFileName(wireless);CHECK(f.open(QIODevice::WriteOnly));f.write("eth0: 0000 70. -40. -256 0 0 0 0 0 0\n");f.close();
+    tailui::Controller controller(dir.path()+"/socket",helper,route,nullptr,updater,wireless);
     QWidget window;window.resize(1264,1680);window.setStyleSheet("background:white;");
     QPushButton book("Book underneath",&window);book.setAttribute(Qt::WA_AcceptTouchEvents);book.setGeometry(30,1000,500,150);int bookClicks=0;
     QObject::connect(&book,&QPushButton::clicked,[&]{++bookClicks;});
@@ -162,6 +164,8 @@ int main(int argc,char **argv){
     signout->click();CHECK(confirmation->isVisible());controller.updates().check();CHECK(!confirmation->isVisible()&&!signout->isEnabled());
     CHECK(waitFor([&]{return !controller.updates().busy()&&signout->isEnabled();}));
     primary->click();CHECK(waitFor([&]{return !controller.busy()&&!controller.updates().busy()&&state->text()=="Disconnected";}));CHECK(signout->isVisible()&&signout->isEnabled());
+    f.setFileName(route);CHECK(f.open(QIODevice::WriteOnly|QIODevice::Truncate));f.write("eth0 00000000 0100000A 0003\n");f.close();controller.refresh();
+    CHECK(waitFor([&]{return controller.hasWifi()&&primary->isEnabled();}));
     f.setFileName(route);CHECK(f.open(QIODevice::WriteOnly|QIODevice::Truncate));f.close();controller.refresh();
     CHECK(waitFor([&]{return state->text()=="Wi-Fi unavailable";}));CHECK(signout->isVisible()&&signout->isEnabled());
     CHECK(f.open(QIODevice::WriteOnly|QIODevice::Truncate));f.write("Iface Destination Gateway Flags\nwlan0 00000000 0100000A 0003\n");f.close();controller.refresh();
@@ -260,6 +264,20 @@ int main(int argc,char **argv){
     updateButton->click();spin(30);
     int compactHeight=panel.height();
     CHECK(window.grab().save("build/widget-connected.png"));
+    // Clara HD uses the same controls at its own screen size and text scale.
+    {
+        QWidget claraWindow;claraWindow.resize(1072,1448);claraWindow.setStyleSheet("background:white;");
+        QWidget claraAnchor(&claraWindow);claraAnchor.setGeometry(888,20,80,90);claraWindow.show();
+        tailui::Panel clara(&claraWindow,&controller,&claraAnchor);clara.open();spin(100);
+        CHECK(clara.findChild<QLabel*>("tailuiState")->text()=="Connected");
+        CHECK(claraWindow.rect().adjusted(10,10,-10,-10).contains(clara.geometry()));
+        CHECK(clara.grab().save("build/clara-connected.png"));
+        clara.findChild<QPushButton*>("tailuiUpdates")->click();spin(100);
+        CHECK(claraWindow.rect().adjusted(10,10,-10,-10).contains(clara.geometry()));
+        CHECK(clara.findChild<QScrollArea*>()->horizontalScrollBar()->maximum()==0);
+        CHECK(clara.grab().save("build/clara-updates.png"));
+    }
+    window.activateWindow();panel.open();spin(80);
     const QImage disconnectIcon=primary->icon().pixmap(primary->iconSize()).toImage();
     primary->setDown(true);CHECK(centerPixels(primary->grab().toImage(),primary->iconSize().width()+4,230,255)>0);primary->setDown(false);
     primary->click();CHECK(waitFor([&]{return state->text()=="Disconnected";}));
@@ -335,6 +353,19 @@ int main(int argc,char **argv){
     CHECK(qr->mapTo(&panel,QPoint()).y()<loginLabel->mapTo(&panel,QPoint()).y());
     CHECK(window.rect().adjusted(10,10,-10,-10).contains(panel.geometry()));
     CHECK(window.grab().save("build/widget-login-qr.png"));
+    {
+        QWidget claraWindow;claraWindow.resize(1072,1448);claraWindow.setStyleSheet("background:white;");
+        QWidget claraAnchor(&claraWindow);claraAnchor.setGeometry(888,20,80,90);claraWindow.show();
+        tailui::Panel clara(&claraWindow,&controller,&claraAnchor);clara.open();spin(100);
+        auto claraQr=clara.findChild<tailui::QrWidget*>("tailuiLoginQr");
+        auto claraScroll=clara.findChild<QScrollArea*>();
+        CHECK(claraQr->isVisible()&&!claraQr->image().isNull());
+        CHECK(claraWindow.rect().adjusted(10,10,-10,-10).contains(clara.geometry()));
+        claraScroll->ensureWidgetVisible(claraQr,0,0);spin(40);
+        CHECK(claraScroll->viewport()->rect().contains(QRect(claraQr->mapTo(claraScroll->viewport(),QPoint()),claraQr->size())));
+        CHECK(clara.grab().save("build/clara-login-qr.png"));
+    }
+    window.activateWindow();panel.open();spin(80);
     const qint64 qrKey=qr->image().cacheKey();spin(100);PaintProbe loginIdle(&panel);app.installEventFilter(&loginIdle);
     int beforeLoginPoll=requests;controller.refresh();CHECK(waitFor([&]{return requests>beforeLoginPoll&&!controller.refreshing();}));spin(60);app.removeEventFilter(&loginIdle);
     CHECK(qr->image().cacheKey()==qrKey&&loginIdle.paints==0&&loginIdle.resizes==0);

@@ -110,3 +110,53 @@ func TestAddonInstallPreservesFactoryUsrAndPrivateIdentity(t *testing.T) {
 		t.Fatal("addon changed shared firmware metadata")
 	}
 }
+
+func TestClaraFactorySystemMetadataIsPreserved(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("ownership fixture requires container root")
+	}
+	e, _ := setupFixture(t)
+	if err := os.WriteFile(e.paths.Version, []byte("a,b,4.38.23852,d,e,376"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(e.paths.Links, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(e.paths.Links, 0775); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.Prepare(context.Background()); err != nil {
+		t.Fatal("Clara factory usr/bin rejected", err)
+	}
+	info, err := os.Stat(e.paths.Links)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Sys().(*syscall.Stat_t).Uid != 0 || info.Mode().Perm() != 0775 {
+		t.Fatal("Clara factory usr/bin metadata changed")
+	}
+	usr := filepath.Join(t.TempDir(), "usr")
+	if err := os.MkdirAll(usr, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(usr, 0775); err != nil {
+		t.Fatal(err)
+	}
+	if err := safeParents(filepath.Dir(usr), "usr/local/Kobo/imageformats/libtailscaleui.so"); err != nil {
+		t.Fatal("Clara factory addon ancestor rejected", err)
+	}
+	info, err = os.Stat(usr)
+	if err != nil || info.Mode().Perm() != 0775 {
+		t.Fatal("Clara factory usr metadata changed", err)
+	}
+	private := filepath.Join(t.TempDir(), "state")
+	if err := os.MkdirAll(private, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(private, 0775); err != nil {
+		t.Fatal(err)
+	}
+	if err := ensureDirectory(private, 0700); err == nil {
+		t.Fatal("group-writable private state accepted")
+	}
+}

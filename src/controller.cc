@@ -6,8 +6,8 @@
 
 namespace tailui {
 
-Controller::Controller(const QString &socket, const QString &helper, const QString &routes, QObject *parent, const QString &updateHelper)
-    : QObject(parent), client_(socket), actions_(helper), updates_(updateHelper), routePath_(routes) {
+Controller::Controller(const QString &socket, const QString &helper, const QString &routes, QObject *parent, const QString &updateHelper, const QString &wireless)
+    : QObject(parent), client_(socket), actions_(helper), updates_(updateHelper), routePath_(routes), wirelessPath_(wireless) {
     updates_.changed=[this]{notify();};
     status_.state = State::Stopped;
     client_.completed = [this](const Status &status) {
@@ -49,15 +49,8 @@ Controller::Controller(const QString &socket, const QString &helper, const QStri
         if(actions_.current()==Action::Prepare) {
             preparing_=false;runtimeReady_=ok;
             notice_=ok&&!message.contains("startup failed")?QString():message;
-            if(ok&&message.contains("now uses system storage"))notice_="Tailscale now uses system storage. USB needs no manual stop.";
             if(!ok)notice_+="\nStorage setup did not finish. Retry setup after addressing the error.";
-            log(ok?"System-storage preparation completed.":"System-storage preparation failed: "+message);
-            // A closed, static installation report remains accessible over USB.
-            // Active logging uses RAM; status polling never touches this file.
-            if(QFile::exists("/mnt/onboard/.kobo/version")) {
-                QFile report("/mnt/onboard/.adds/tailscale-ui/migration-status.txt");
-                if(report.open(QIODevice::WriteOnly|QIODevice::Truncate))report.write(redact(message).toUtf8()+"\n");
-            }
+            log(ok?"Runtime preparation completed.":"Runtime preparation failed: "+message);
             schedule();notify();if(ok)refresh();return;
         }
         connectionFailureNotice_=!ok&&isConnectionAction(actions_.current());
@@ -118,8 +111,9 @@ void Controller::schedule() {
 void Controller::refresh() {
     if(!runtimeReady_||preparing_)return;
     if(actions_.busy()&&actions_.current()==Action::SignOut)return;
-    QFile routes(routePath_);
-    wifi_ = routes.open(QIODevice::ReadOnly) && wifiAvailable(routes.read(65536));
+    QFile routes(routePath_), wireless(wirelessPath_);
+    const QByteArray wirelessData=wireless.open(QIODevice::ReadOnly)?wireless.read(65536):QByteArray();
+    wifi_ = routes.open(QIODevice::ReadOnly) && wifiAvailable(routes.read(65536),wirelessData);
     updates_.watch((!bars_.isEmpty()||!panels_.isEmpty())&&wifi_&&!actions_.busy());
     if(actions_.busy()&&(actions_.current()==Action::InstallTailscale||actions_.current()==Action::InstallAddon))updates_.progress();
     if (!client_.refresh()) pending_ = true;
@@ -138,9 +132,26 @@ Status Controller::status() const {
     // AuthURL can outlive login in LocalAPI. Clear it before the Wi-Fi view
     // override so a completed sign-in cannot reappear as an offline QR/link.
     if(view.state==State::Connected||view.state==State::Disconnected||view.state==State::Stopped)view.authUrl.clear();
-    if (connecting() && view.state != State::Connected && view.state != State::NeedsLogin) view.state = State::Connecting;
+    if (connecting() && view.state != State::Connected && view.state != State::Error) {
+        // These idle warnings become stale while a connection is in flight.
+        // Preserve all other health messages, including firewall failures.
+        view.health.removeAll("Tailscale is stopped.");
+        view.health.removeAll("You are logged out.");
+        if(view.state!=State::NeedsLogin||(view.requiresSignIn&&view.authUrl.isEmpty()))view.state=State::Connecting;
+    }
     if (!wifi_ && view.state != State::Stopped && view.state != State::Error) view.state = State::NoWifi;
     return view;
+}
+
+QString Controller::notice() const {
+    if(!notice_.isEmpty()||!connecting()||!wifi_)return notice_;
+    const Status displayed=status();
+    if(status_.state==State::Connected||status_.state==State::Error||!displayed.authUrl.isEmpty()||
+        (displayed.state==State::NeedsLogin&&!displayed.requiresSignIn))return QString();
+    QString progress=status_.state==State::Stopped?"Starting Tailscale service…":
+        status_.state==State::NeedsLogin?"Requesting a sign-in link…":"Connecting to your tailnet…";
+    if(!displayed.health.isEmpty())progress+="\n"+displayed.health.join("\n");
+    return progress;
 }
 
 bool Controller::canSignOut() const {

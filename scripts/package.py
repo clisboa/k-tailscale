@@ -8,8 +8,9 @@ from pathlib import Path
 import tarfile
 import json
 import subprocess
+import shutil
 
-from package_scope import LIB, STATE, PAYLOAD, UI, HELPERS, core, release_version
+from package_scope import LIB, STATE, PAYLOAD, UI, HELPERS, TUN, TUN_LICENSE, core, release_version
 
 
 
@@ -48,6 +49,9 @@ def main():
     data = artifact.read_bytes()
     public = {key: verified[key] for key in ['version', 'expanded', 'files', 'proof']}
     public.update(size=len(data), sha256=hashlib.sha256(data).hexdigest())
+    module = root/'build/tun.ko'
+    subprocess.run([str(verifier),'verify-tun-module','--module',str(module)],check=True,
+                   capture_output=True,text=True,timeout=30)
     library = (root / 'build/libtailscaleui.so').read_bytes()
     install = [(LIB, 0o755, library)]
     for name in HELPERS:
@@ -58,12 +62,14 @@ def main():
     update = list(install)
     install.extend([(PAYLOAD+'release.tgz',0o644,data),
                     (PAYLOAD+'release.json',0o644,(json.dumps(public,sort_keys=True)+'\n').encode())])
+    install.extend([(TUN,0o644,module.read_bytes()),(TUN_LICENSE,0o644,(root/'kernel/COPYING').read_bytes())])
     for source, target in [('README.md', 'README.txt'), ('LICENSE', 'LICENSE'), ('NOTICE', 'NOTICE')]:
         install.append((STATE + target, 0o644, (root / source).read_bytes()))
     archive(output / 'KoboRoot.tgz', install)
     archive(output / 'k-tailscale-update.tgz', update)
     archive(output / 'KoboRoot-uninstall.tgz', [(LIB, 0o755, library), (STATE+'uninstall', 0o644, b'')])
-    names = ['KoboRoot.tgz', 'KoboRoot-uninstall.tgz', 'k-tailscale-update.tgz']
+    shutil.copyfile(root/'build/k-tailscale-tun-source.tar.gz',output/'k-tailscale-tun-source.tar.gz')
+    names = ['KoboRoot.tgz', 'KoboRoot-uninstall.tgz', 'k-tailscale-update.tgz', 'k-tailscale-tun-source.tar.gz']
     (output / 'SHA256SUMS').write_text(''.join(
         hashlib.sha256((output / name).read_bytes()).hexdigest() + '  ' + name + '\n' for name in names))
     print(output)

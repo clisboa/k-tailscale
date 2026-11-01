@@ -58,6 +58,37 @@ func writeJSON(filename string, value any) error {
 	return writeAtomic(filename, append(data, '\n'), 0600)
 }
 
+// The staged source and target are on the same private system filesystem.
+// Retain immutable source/rollback inodes without allocating another file copy.
+func linkAtomic(source, target string) error {
+	info, err := os.Lstat(source)
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() {
+		return errors.New("atomic link source is not a regular file")
+	}
+	file, err := os.CreateTemp(filepath.Dir(target), ".k-tailscale-link-*")
+	if err != nil {
+		return err
+	}
+	name := file.Name()
+	defer os.Remove(name)
+	if err := file.Close(); err != nil {
+		return err
+	}
+	if err := os.Remove(name); err != nil {
+		return err
+	}
+	if err := os.Link(source, name); err != nil {
+		return err
+	}
+	if err := os.Rename(name, target); err != nil {
+		return err
+	}
+	return syncDirectory(filepath.Dir(target))
+}
+
 func readJSON(filename string, value any) error {
 	f, err := os.Open(filename)
 	if err != nil {
@@ -78,8 +109,8 @@ func ensureDirectory(directory string, mode os.FileMode) error {
 	return ensureDirectoryPolicy(directory, mode, 0)
 }
 
-// Kobo 4.46.23852 ships shared system directories under build UID/GID 3018.
-// Accept that exact factory metadata only at explicitly selected OS paths.
+// Libra 4.46.23852 uses build UID/GID 3018; Clara 4.38.23852 uses root:root.
+// Accept factory metadata only at explicitly selected OS paths and modes.
 // Private runtime/state/helper directories always use ensureDirectory instead.
 func ensureSystemDirectory(directory string, factoryMode os.FileMode) error {
 	return ensureDirectoryPolicy(directory, 0755, factoryMode)
@@ -102,7 +133,8 @@ func ensureDirectoryPolicy(directory string, mode, factoryMode os.FileMode) erro
 	}
 	permissions := info.Mode().Perm()
 	privateOwner := metadata.Uid == uint32(os.Geteuid())
-	factoryOwner := factoryMode != 0 && metadata.Uid == 3018 && metadata.Gid == 3018
+	factoryOwner := factoryMode != 0 &&
+		((metadata.Uid == 3018 && metadata.Gid == 3018) || (metadata.Uid == 0 && metadata.Gid == 0))
 	if !privateOwner && !factoryOwner {
 		return fmt.Errorf("directory %s has an unexpected owner %d (expected %d)", directory, metadata.Uid, os.Geteuid())
 	}
@@ -187,7 +219,7 @@ func extractArtifact(ctx context.Context, artifact Artifact, directory string) e
 			if err != nil {
 				return err
 			}
-			n, copyErr := io.Copy(out, tr)
+			n, copyErr := copyContext(ctx, out, tr, header.Size)
 			syncErr := out.Sync()
 			closeErr := out.Close()
 			if err := errors.Join(copyErr, syncErr, closeErr); err != nil {

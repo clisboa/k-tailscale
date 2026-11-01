@@ -38,3 +38,18 @@ Run the offline empty-system-store regression in Linux and explicitly enable
 release check without system CAs. Normal tests do not contact public services.
 The CA snapshot is delivered in addon updates independently of Tailscale binary
 updates; a Tailscale-only update does not refresh these TLS roots.
+
+## Clara kernel dependency
+
+Run `scripts/build-tun.sh` before packaging. It verifies Kobo's pinned source,
+uses the pinned NickelTC toolchain and factory configuration, and requires the
+34 KiB module to reproduce the manifest hash. The full USB package includes the
+public module and GPL license; addon-only updates retain the installed driver.
+The system helper authenticates RAM copies and uses normal kernel ABI checks.
+
+Publish `dist/k-tailscale-tun-source.tar.gz` alongside every release containing
+the module. It contains all corresponding source and the exact configuration
+and recipe. `scripts/release.py` verifies the complete source-bundle scope and
+input hashes before signing, and `SHA256SUMS` covers this additional asset. Do
+not include a built kernel image in any installer or release. The release
+workflow builds and publishes this asset automatically.

@@ -19,6 +19,8 @@ HELPERS = ['control.sh', 'migrate.sh', 'on-boot-root.sh', 'connect-root.sh', 'lo
 STATE = 'mnt/onboard/.adds/tailscale-ui/'
 CORE = 'usr/local/k-tailscale/releases/0.1.0/'
 PAYLOAD = 'mnt/onboard/.adds/k-tailscale/install/'
+TUN = 'mnt/onboard/.adds/k-tailscale/kernel/clara-hd/tun.ko'
+TUN_LICENSE = 'mnt/onboard/.adds/k-tailscale/kernel/clara-hd/COPYING'
 
 
 def elf():
@@ -41,6 +43,11 @@ class Packages(unittest.TestCase):
         helper=bytearray(elf()+b'kobo-tailscale/helper')
         struct.pack_into('<H',helper,16,2)
         (self.root/'build/k-tailscale-helper').write_bytes(helper)
+        module=bytearray(elf());struct.pack_into('<H',module,16,1)
+        (self.root/'build/tun.ko').write_bytes(module)
+        (self.root/'kernel').mkdir()
+        (self.root/'kernel/COPYING').write_text('GNU GENERAL PUBLIC LICENSE fixture\n')
+        (self.root/'build/k-tailscale-tun-source.tar.gz').write_bytes(b'fixture corresponding source')
         (self.root/'build/THIRD_PARTY_NOTICES.txt').write_text('Fixture dependency notices\n')
         upstream=self.root/'build/upstream';upstream.mkdir()
         with tarfile.open(upstream/'verified-1.104.4.tgz','w:gz') as archive:
@@ -92,7 +99,7 @@ class Packages(unittest.TestCase):
             members = archive.getmembers()
             expected={LIB,STATE+'README.txt',STATE+'LICENSE',STATE+'NOTICE'}
             expected.update('usr/local/tailscale-ui/'+name for name in HELPERS)
-            expected.update({'usr/local/tailscale-ui/release-version',CORE+'helper',CORE+'THIRD_PARTY_NOTICES.txt',PAYLOAD+'release.tgz',PAYLOAD+'release.json'})
+            expected.update({'usr/local/tailscale-ui/release-version',CORE+'helper',CORE+'THIRD_PARTY_NOTICES.txt',PAYLOAD+'release.tgz',PAYLOAD+'release.json',TUN,TUN_LICENSE})
             self.assertEqual({m.name for m in members}, expected)
             self.assertTrue(all(m.isfile() and m.uid == m.gid == m.mtime == 0 for m in members))
             self.assertEqual({m.name: m.mode for m in members}[LIB], 0o755)
@@ -107,6 +114,7 @@ class Packages(unittest.TestCase):
         with tarfile.open(self.dist/'k-tailscale-update.tgz') as archive:
             self.assertTrue(all(name.startswith('usr/') for name in archive.getnames()))
             self.assertNotIn(PAYLOAD+'release.tgz',archive.getnames())
+            self.assertNotIn(TUN,archive.getnames())
         self.assertEqual(self.verify('k-tailscale-update.tgz','update').returncode,0)
 
     def test_removal_only_installs_cleanup_plugin_and_marker(self):

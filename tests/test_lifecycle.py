@@ -59,7 +59,7 @@ except (OSError,ValueError,subprocess.CalledProcessError):sys.exit(1)
 
     def script(self):
         self.assertTrue(SOURCE.exists(), 'Lifecycle helper has not been implemented')
-        text = SOURCE.read_text()
+        text = SOURCE.read_text().replace('/usr/bin/tailscale', str(self.client))
         text = text.replace('/usr/local/k-tailscale/helper', str(self.root / 'core-helper'))
         text = text.replace('/usr/local/tailscale-runtime', str(self.root / 'runtime'))
         text = text.replace('/usr/local/tailscale-ui', str(self.root / 'ui'))
@@ -97,6 +97,15 @@ except (OSError,ValueError,subprocess.CalledProcessError):sys.exit(1)
                 result=self.run_action(verb)
                 self.assertEqual(result.returncode,0,result.stdout+result.stderr)
                 self.assertEqual((self.root/'intent').read_text().strip(),verb)
+
+    def test_cold_start_reaches_recovery_before_ram_cli_exists(self):
+        self.client.unlink()
+        self.write_executable(self.helper, '#!/bin/sh\necho "runtime recovery reached"\n')
+        for verb in ['connect', 'signin']:
+            with self.subTest(verb=verb):
+                result=self.run_action(verb)
+                self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+                self.assertIn('runtime recovery reached',result.stdout)
 
     def test_disconnect_preserves_running_daemon(self):
         daemon = self.start_daemon()

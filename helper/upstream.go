@@ -244,7 +244,7 @@ func (u *Upstream) Download(ctx context.Context, version, directory string) (Art
 		return Artifact{}, err
 	}
 	if available < size+spaceReserve {
-		return Artifact{}, errors.New("not enough system space for the verified download")
+		return Artifact{}, errors.New("not enough storage for the verified download")
 	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, u.baseURL+route, nil)
 	if err != nil {

@@ -2,6 +2,7 @@ package helper
 
 import (
 	"archive/tar"
+	"bytes"
 	"compress/gzip"
 	"context"
 	"crypto/ed25519"
@@ -101,71 +102,97 @@ func addonScope(v string) map[string]os.FileMode {
 	}
 	return scope
 }
-func extractAddon(filename, dir, v string) error {
-	f, err := os.Open(filename)
+func extractAddon(filename, dir, version string) error {
+	_, err := readAddon(filename, dir, version)
+	return err
+}
+
+// An empty destination validates and measures the complete bounded archive
+// without writing anything. Both passes enforce exactly the same scope.
+func readAddon(filename, dir, version string) (int64, error) {
+	file, err := os.Open(filename)
 	if err != nil {
-		return err
+		return 0, err
 	}
-	defer f.Close()
-	gz, err := gzip.NewReader(f)
+	defer file.Close()
+	gz, err := gzip.NewReader(file)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer gz.Close()
 	limited := &io.LimitedReader{R: gz, N: maxAddonExpanded + 1}
-	tr := tar.NewReader(limited)
-	scope := addonScope(v)
+	reader := tar.NewReader(limited)
+	scope := addonScope(version)
 	seen := map[string]bool{}
-	count := 0
+	var total int64
+	var releaseVersion string
 	for {
-		h, err := tr.Next()
+		header, err := reader.Next()
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
-			return err
+			return 0, err
 		}
-		count++
-		mode, ok := scope[h.Name]
-		if !ok || seen[h.Name] || count > len(scope) || h.Typeflag != tar.TypeReg || len(h.PAXRecords) > 0 || h.Size < 0 || h.Size > 16<<20 || os.FileMode(h.Mode) != mode {
-			return errors.New("addon archive has an unexpected path, mode or entry")
+		mode, ok := scope[header.Name]
+		if !ok || seen[header.Name] || len(seen) >= len(scope) || header.Typeflag != tar.TypeReg || len(header.PAXRecords) > 0 || header.Size < 0 || header.Size > 16<<20 || os.FileMode(header.Mode) != mode {
+			return 0, errors.New("addon archive has an unexpected path, mode or entry")
 		}
-		dest := filepath.Join(dir, h.Name)
-		if err := os.MkdirAll(filepath.Dir(dest), 0700); err != nil {
-			return err
+		total += header.Size
+		var versionData bytes.Buffer
+		var target io.Writer = io.Discard
+		var out *os.File
+		if dir != "" {
+			destination := filepath.Join(dir, header.Name)
+			if err := os.MkdirAll(filepath.Dir(destination), 0700); err != nil {
+				return 0, err
+			}
+			out, err = os.OpenFile(destination, os.O_CREATE|os.O_EXCL|os.O_WRONLY, mode)
+			if err != nil {
+				return 0, err
+			}
+			target = out
 		}
-		out, err := os.OpenFile(dest, os.O_CREATE|os.O_EXCL|os.O_WRONLY, mode)
-		if err != nil {
-			return err
+		if header.Name == "usr/local/tailscale-ui/release-version" {
+			if header.Size > 128 {
+				if out != nil {
+					out.Close()
+				}
+				return 0, errors.New("invalid addon version size")
+			}
+			target = io.MultiWriter(target, &versionData)
 		}
-		_, copyErr := io.Copy(out, tr)
-		err = errors.Join(copyErr, out.Sync(), out.Close())
-		if err != nil {
-			return err
+		_, copyErr := io.Copy(target, reader)
+		if out != nil {
+			copyErr = errors.Join(copyErr, out.Sync(), out.Close())
 		}
-		seen[h.Name] = true
+		if copyErr != nil {
+			return 0, copyErr
+		}
+		if header.Name == "usr/local/tailscale-ui/release-version" {
+			releaseVersion = strings.TrimSpace(versionData.String())
+		}
+		seen[header.Name] = true
 	}
-	// Validate gzip checksum and reject hidden nonzero data after tar EOF.
 	tail, err := io.ReadAll(limited)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	if limited.N <= 0 || len(tail) > 1<<20 {
-		return errors.New("addon archive exceeds size limit")
+		return 0, errors.New("addon archive exceeds size limit")
 	}
 	for _, b := range tail {
 		if b != 0 {
-			return errors.New("addon archive contains trailing data")
+			return 0, errors.New("addon archive contains trailing data")
 		}
 	}
 	if len(seen) != len(scope) {
-		return errors.New("addon archive is incomplete")
+		return 0, errors.New("addon archive is incomplete")
 	}
-	data, err := os.ReadFile(filepath.Join(dir, "usr/local/tailscale-ui/release-version"))
-	if err != nil || strings.TrimSpace(string(data)) != v {
-		return errors.New("addon version file mismatch")
+	if releaseVersion != version {
+		return 0, errors.New("addon version file mismatch")
 	}
-	return nil
+	return total, nil
 }
 
 type addonFile struct {
@@ -212,11 +239,7 @@ func (e *Engine) recoverAddon() error {
 		for _, f := range j.Files {
 			target := e.addonPath(f.Name)
 			if f.Present {
-				data, err := os.ReadFile(filepath.Join(txn, "backup", f.Name))
-				if err != nil {
-					return err
-				}
-				if err := writeAtomic(target, data, os.FileMode(f.Mode)); err != nil {
+				if err := linkAtomic(filepath.Join(txn, "backup", f.Name), target); err != nil {
 					return err
 				}
 			} else {
@@ -274,6 +297,15 @@ func (e *Engine) applyAddon(archive string, m addonManifest) error {
 	if err := e.recoverAddon(); err != nil {
 		return err
 	}
+	expanded, err := readAddon(archive, "", m.Version)
+	if err != nil {
+		return err
+	}
+	// Staging allocates the new contents once. Live files and immutable old
+	// backups are linked atomically, avoiding another full helper-sized copy.
+	if err := e.requireSpace(expanded + 1<<20); err != nil {
+		return err
+	}
 	txn := filepath.Join(e.updateRoot(), "addon-transaction")
 	if err := os.RemoveAll(txn); err != nil {
 		return err
@@ -309,7 +341,6 @@ func (e *Engine) applyAddon(archive string, m addonManifest) error {
 	if names[len(names)-1] != lib {
 		return errors.New("addon library ordering is invalid")
 	}
-	var backupSize int64
 	for _, name := range names {
 		if err := safeParents(e.paths.SystemRoot, name); err != nil {
 			return err
@@ -323,7 +354,6 @@ func (e *Engine) applyAddon(archive string, m addonManifest) error {
 			}
 			f.Present = true
 			f.Mode = uint32(info.Mode().Perm())
-			backupSize += info.Size()
 			dest := filepath.Join(txn, "backup", name)
 			if err := os.MkdirAll(filepath.Dir(dest), 0700); err != nil {
 				return err
@@ -335,9 +365,6 @@ func (e *Engine) applyAddon(archive string, m addonManifest) error {
 			return err
 		}
 		j.Files = append(j.Files, f)
-	}
-	if err := e.requireSpace(backupSize); err != nil {
-		return err
 	}
 	if err := syncTreeDirectories(txn); err != nil {
 		return err
@@ -351,11 +378,7 @@ func (e *Engine) applyAddon(archive string, m addonManifest) error {
 		return err
 	}
 	for _, f := range j.Files {
-		data, err := os.ReadFile(filepath.Join(stage, f.Name))
-		if err != nil {
-			return errors.Join(err, e.recoverAddon())
-		}
-		if err := writeAtomic(e.addonPath(f.Name), data, addonScope(m.Version)[f.Name]); err != nil {
+		if err := linkAtomic(filepath.Join(stage, f.Name), e.addonPath(f.Name)); err != nil {
 			return errors.Join(err, e.recoverAddon())
 		}
 	}
@@ -446,7 +469,7 @@ func (e *Engine) InstallAddon(ctx context.Context) error {
 	} else if err != nil {
 		return err
 	}
-	if err := e.requireSpace(m.Size + 2*maxAddonExpanded); err != nil {
+	if err := e.requireSpace(m.Size); err != nil {
 		return err
 	}
 	e.reportUpdate("Downloading and verifying the addon…")

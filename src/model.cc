@@ -5,6 +5,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QRegExp>
+#include <QSet>
 #include <QUrl>
 
 namespace tailui {
@@ -102,10 +103,15 @@ QString stateLabel(State state) {
     return "Status unavailable";
 }
 
-bool wifiAvailable(const QByteArray &routes) {
+bool wifiAvailable(const QByteArray &routes, const QByteArray &wireless) {
+    QSet<QByteArray> interfaces;
+    for (const QByteArray &line : wireless.split('\n')) {
+        const QList<QByteArray> fields=line.simplified().split(' ');
+        if(!fields.isEmpty()&&fields[0].endsWith(":"))interfaces.insert(fields[0].left(fields[0].size()-1));
+    }
     for (const QByteArray &line : routes.split('\n')) {
         const QList<QByteArray> fields = line.simplified().split(' ');
-        if (fields.size() < 4 || !fields[0].startsWith("wlan") || fields[1] != "00000000" || fields[2] == "00000000") continue;
+        if (fields.size() < 4 || (!fields[0].startsWith("wlan") && !interfaces.contains(fields[0])) || fields[1] != "00000000" || fields[2] == "00000000") continue;
         bool ok = false; const uint flags = fields[3].toUInt(&ok, 16);
         if (ok && (flags & 3) == 3) return true;
     }

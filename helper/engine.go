@@ -4,7 +4,12 @@ import (
 	"context"
 )
 
-type Paths struct{ Runtime, Payload, Helpers, Base, Rules, Lock, Version, ServiceLock, Links, Socket, CoreLink, CandidateHelper, SystemRoot string }
+type Paths struct {
+	Runtime, Payload, Helpers, Base, Rules, Lock, Version, ServiceLock, Links, Socket string
+	CoreLink, CandidateHelper, SystemRoot                                             string
+	Books, RAM, USBScript, USBBlock, BooksMount                                       string
+	TUNDevice, TUNModule                                                              string
+}
 type service interface {
 	Version(context.Context, string) (string, error)
 	Running(context.Context) (bool, error)
@@ -22,4 +27,6 @@ type Engine struct {
 	eligibility func() error
 	addon       *addonSource
 	persist     func(string) error
+	memory      func() (int64, error)
+	ramCheck    func(string) error
 }

@@ -95,7 +95,7 @@ func (e *Engine) requireSpace(bytes int64) error {
 		return err
 	}
 	if bytes+spaceReserve > free {
-		return fmt.Errorf("Not enough system storage: need %d MiB, available %d MiB. Books storage is not used.", (bytes+spaceReserve+(1<<20)-1)>>20, free>>20)
+		return fmt.Errorf("Not enough system storage: need %d MiB, available %d MiB.", (bytes+spaceReserve+(1<<20)-1)>>20, free>>20)
 	}
 	return nil
 }
@@ -322,6 +322,11 @@ func (e *Engine) rollbackUpdate(ctx context.Context, j updateJournal) error {
 // Caller holds the service lock. A normal command retains a deliberately stopped
 // daemon; boot/start is allowed to validate a deferred candidate.
 func (e *Engine) recoverUpdate(ctx context.Context, start bool) error {
+	if installed, err := e.ramInstalled(); err != nil {
+		return err
+	} else if installed {
+		return e.recoverRAMUpdate(ctx, start)
+	}
 	var j updateJournal
 	if err := readJSON(e.updateJournalPath(), &j); os.IsNotExist(err) {
 		return nil
@@ -349,6 +354,14 @@ func (e *Engine) recoverUpdate(ctx context.Context, start bool) error {
 	}
 }
 func (e *Engine) InstallTailscale(ctx context.Context) error {
+	if installed, err := e.ramInstalled(); err != nil {
+		return err
+	} else if installed {
+		return e.installBooksRelease(ctx)
+	}
+	if e.paths.ramMode() {
+		return e.legacyEngine().InstallTailscale(ctx)
+	}
 	unlock, err := acquireActionLock(e.paths.Lock)
 	if err != nil {
 		return err

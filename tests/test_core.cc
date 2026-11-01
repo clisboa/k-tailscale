@@ -49,6 +49,11 @@ int main(int argc, char **argv) {
     CHECK(wifiAvailable("Iface Destination Gateway Flags\nwlan0 00000000 0100A8C0 0003\n"));
     CHECK(!wifiAvailable("wlan0 00000000 0100A8C0 0000\n"));
     CHECK(!wifiAvailable("eth0 00000000 0100A8C0 0003\n"));
+    const QByteArray legacyWireless="Inter-| sta-| Quality\n eth0: 0000 70. -40. -256 0 0 0 0 0 0\n";
+    CHECK(wifiAvailable("eth0 00000000 0100A8C0 0003\n",legacyWireless));
+    CHECK(!wifiAvailable("eth0 00000000 0100A8C0 0001\n",legacyWireless));
+    CHECK(!wifiAvailable("tailscale0 00000000 0100A8C0 0003\n",legacyWireless));
+    CHECK(!wifiAvailable("usb0 00000000 0100A8C0 0003\n",legacyWireless));
     CHECK(!wifiAvailable("wlan0 00000000 00000000 0001\n"));
     std::puts("Core status and HTTP boundary tests passed.");
     return 0;

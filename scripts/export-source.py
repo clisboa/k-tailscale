@@ -5,7 +5,7 @@ import pathlib
 import shutil
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-DIRECTORIES = ['src','helper','scripts','tests','installer','.github']
+DIRECTORIES = ['src','helper','scripts','tests','installer','.github','kernel']
 FILES = ['VERSION','README.md','RELEASING.md','LICENSE','NOTICE','Makefile','.gitignore','.gitattributes']
 
 

@@ -15,7 +15,8 @@ public:
     explicit Controller(const QString &socket = "/var/run/tailscale/tailscaled.sock",
                         const QString &helper = "/usr/local/tailscale-ui/control.sh",
                         const QString &routes = "/proc/net/route", QObject *parent = nullptr,
-                        const QString &updateHelper = "/usr/local/k-tailscale/helper");
+                        const QString &updateHelper = "/usr/local/k-tailscale/helper",
+                        const QString &wireless = "/proc/net/wireless");
     void observe(QObject *owner, const std::function<void()> &callback);
     void setBarVisible(QObject *bar, bool visible);
     void setPanelVisible(QObject *panel, bool visible);
@@ -23,7 +24,7 @@ public:
     bool act(Action action);
     bool canSignOut() const;
     Status status() const;
-    QString notice() const { return notice_; }
+    QString notice() const;
     Updates &updates() { return updates_; }
     bool busy() const { return actions_.busy(); }
     bool connecting() const { return actions_.busy() && isConnectionAction(actions_.current()); }
@@ -42,7 +43,7 @@ private:
     Actions actions_;
     Updates updates_;
     QTimer poll_;
-    QString routePath_, notice_, retiredAuthUrl_;
+    QString routePath_, wirelessPath_, notice_, retiredAuthUrl_;
     Status status_;
     bool wifi_ = false, pending_ = false, usbReady_ = false;
     bool runtimeReady_ = true, preparing_ = false, signedOut_ = false, awaitingLogin_ = false, connectionFailureNotice_ = false;

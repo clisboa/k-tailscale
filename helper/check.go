@@ -39,22 +39,6 @@ func (e *Engine) installAllowed() error {
 	}
 	return nil
 }
-func wifiPresent() bool {
-	data, err := os.ReadFile("/proc/net/route")
-	if err != nil {
-		return false
-	}
-	for _, line := range strings.Split(string(data), "\n") {
-		f := strings.Fields(line)
-		if len(f) > 3 && strings.HasPrefix(f[0], "wlan") && f[1] == "00000000" {
-			flags, err := strconv.ParseUint(f[3], 16, 32)
-			if err == nil && flags&1 != 0 {
-				return true
-			}
-		}
-	}
-	return false
-}
 func deviceInstallAllowed() error {
 	if !wifiPresent() {
 		return errors.New("Connect Wi-Fi to install updates.")
@@ -112,14 +96,28 @@ func (e *Engine) Status(ctx context.Context) (UpdateStatus, error) {
 	s.Latest = r.Latest
 	s.Checked = r.Checked
 	s.Error = r.Error
-	v, err := e.pairVersion(ctx, filepath.Join(e.paths.Runtime, "bin"))
+	installed, err := e.ramInstalled()
+	if err != nil {
+		return s, err
+	}
+	var v string
+	journalPath := e.updateJournalPath()
+	if installed {
+		layout, readErr := e.readLayout()
+		if readErr != nil {
+			return s, readErr
+		}
+		v = layout.Current.Version
+		journalPath = e.ramUpdateJournalPath()
+	} else {
+		v, err = e.legacyEngine().pairVersion(ctx, e.paths.legacyBinDir())
+	}
 	if err != nil {
 		return s, err
 	}
 	s.Current = v
 	s.Available = stableVersion(r.Latest) && newerVersion(r.Latest, v)
-	var j updateJournal
-	if err := readJSON(e.updateJournalPath(), &j); err == nil {
+	if _, err := os.Lstat(journalPath); err == nil {
 		s.Pending = true
 		s.CanInstall = false
 		s.Reason = "Restart Tailscale to finish validating the previous update."

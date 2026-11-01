@@ -5,6 +5,8 @@ LIB = 'usr/local/Kobo/imageformats/libtailscaleui.so'
 STATE = 'mnt/onboard/.adds/tailscale-ui/'
 PAYLOAD = 'mnt/onboard/.adds/k-tailscale/install/'
 UI = 'usr/local/tailscale-ui/'
+TUN = 'mnt/onboard/.adds/k-tailscale/kernel/clara-hd/tun.ko'
+TUN_LICENSE = 'mnt/onboard/.adds/k-tailscale/kernel/clara-hd/COPYING'
 HELPERS = ['control.sh', 'migrate.sh', 'on-boot-root.sh', 'connect-root.sh',
            'login-root.sh', 'diagnose-root.sh', 'setup.sh', 'runtime-boot.sh']
 VERSION_PATTERN = re.compile(r'(0|[1-9][0-9]{0,5})\.(0|[1-9][0-9]{0,5})\.(0|[1-9][0-9]{0,5})\Z')
@@ -29,5 +31,5 @@ def expected(version, kind):
     entries.update({UI+name: 0o755 for name in HELPERS})
     if kind == 'install':
         entries.update({STATE+name: 0o644 for name in ['README.txt', 'LICENSE', 'NOTICE']})
-        entries.update({PAYLOAD+'release.tgz': 0o644, PAYLOAD+'release.json': 0o644})
+        entries.update({PAYLOAD+'release.tgz': 0o644, PAYLOAD+'release.json': 0o644, TUN: 0o644, TUN_LICENSE: 0o644})
     return entries

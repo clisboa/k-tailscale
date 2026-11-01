@@ -1,6 +1,10 @@
 const activeTargets = new WeakSet();
 const versionPattern = /^(0|[1-9]\d{0,5})\.(0|[1-9]\d{0,5})\.(0|[1-9]\d{0,5})$/;
 const pendingMessage = 'A KoboRoot.tgz update is already waiting on this Kobo. Eject and let it finish before installing k-tailscale.';
+const supportedDevices = new Map([
+  ['390', { model: 'Kobo Libra Colour', firmware: '4.46.23852' }],
+  ['376', { model: 'Kobo Clara HD', firmware: '4.38.23852' }],
+]);
 
 export async function readKobo(root) {
   let directory, file;
@@ -11,9 +15,10 @@ export async function readKobo(root) {
   if (file.size > 4096) throw new Error('The selected drive has an invalid Kobo version file.');
   const fields = (await file.text()).trim().split(',');
   const model = fields[5]?.split('-').pop().replace(/^0+/, '');
-  if (model !== '390') throw new Error('This release supports the Kobo Libra Colour.');
-  if (fields[2] !== '4.46.23852') throw new Error('This release supports firmware 4.46.23852.');
-  return { directory, model: 'Kobo Libra Colour', firmware: fields[2] };
+  const device = supportedDevices.get(model);
+  if (!device) throw new Error('This release supports the Kobo Libra Colour and Kobo Clara HD.');
+  if (fields[2] !== device.firmware) throw new Error(`${device.model} requires firmware ${device.firmware}.`);
+  return { directory, model: device.model, firmware: fields[2] };
 }
 
 export function validateManifest(value) {

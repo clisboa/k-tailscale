@@ -13,7 +13,7 @@ import subprocess
 import tarfile
 import tempfile
 
-from package_scope import LIB, STATE, PAYLOAD, UI, core, expected, release_version
+from package_scope import LIB, STATE, PAYLOAD, UI, TUN, TUN_LICENSE, core, expected, release_version
 
 LIMIT = 128 * 1024 * 1024
 SECRETS = re.compile(rb'tskey-[a-z]+-[A-Za-z0-9_-]+|(?:privkey|nodekey|machinekey|authkey):[a-zA-Z0-9]+|/api/v1/kobo/[a-fA-F0-9]{24,}|/a/[a-fA-F0-9]{16,}')
@@ -96,6 +96,21 @@ def verify(path, kind, verifier):
     arm_elf(entries[core(version)+'helper'], False)
     if kind == 'install':
         upstream_proof(entries, verifier)
+        tun_proof(entries[TUN],verifier)
+        if b'GNU GENERAL PUBLIC LICENSE' not in entries[TUN_LICENSE]:
+            raise ValueError('TUN module GPL license is missing')
+
+
+def tun_proof(payload, verifier):
+    if len(payload)<52 or len(payload)>2*1024*1024 or payload[:7]!=b'\x7fELF\x01\x01\x01' or struct.unpack_from('<HH',payload,16)!=(1,40):
+        raise ValueError('TUN module must be a relocatable 32-bit ARM ELF')
+    with tempfile.TemporaryDirectory(prefix='kt-module-proof-') as folder:
+        path=Path(folder)/'tun.ko'
+        path.write_bytes(payload)
+        result=subprocess.run([str(verifier),'verify-tun-module','--module',str(path)],
+                              capture_output=True,text=True,timeout=30)
+        if result.returncode:
+            raise ValueError('TUN module verification failed: '+result.stderr[:400])
 
 
 def main():

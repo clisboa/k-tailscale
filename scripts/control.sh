@@ -2,7 +2,7 @@
 
 PATH=/sbin:/bin:/usr/sbin:/usr/bin
 export PATH
-TS=/usr/local/tailscale-runtime/bin/tailscale
+TS=/usr/bin/tailscale
 CONNECT=/usr/local/tailscale/connect.sh
 LOCK=/tmp/kobo-tailscale-connect.lock
 BOOT_PATTERN='/usr/local/tailscale/(on-boot|boot)\.sh'
@@ -13,8 +13,10 @@ case "${1-}" in
     restart) sync; exec /sbin/reboot ;;
     prepare) exec timeout 120 /bin/sh /usr/local/tailscale-ui/setup.sh ;;
     connect|signin)
-        if [ ! -x "$TS" ] || [ ! -r "$CONNECT" ]; then
-            echo 'The working Tailscale installation or connection helper is missing.'
+        # The RAM CLI may not exist yet after a cold boot. The connection
+        # helper performs verified recovery before starting the service.
+        if [ ! -r "$CONNECT" ]; then
+            echo 'The Tailscale connection helper is missing.'
             exit 2
         fi
         exec /bin/sh "$CONNECT" "$1"

@@ -211,7 +211,18 @@ func (e *Engine) recognizedRuntime() (bool, error) {
 }
 
 func (e *Engine) validateRuntimeDirectories() error {
-	for _, name := range []string{"bin", "state"} {
+	names := []string{"bin", "state"}
+	if e.paths.ramMode() {
+		names = []string{"state"}
+		layout, err := e.readLayout()
+		if err != nil {
+			return err
+		}
+		if !e.ramPairReady(layout.Current) {
+			return errors.New("verified RAM executable pair is unavailable")
+		}
+	}
+	for _, name := range names {
 		filename := filepath.Join(e.paths.Runtime, name)
 		info, err := os.Lstat(filename)
 		if err != nil {
@@ -228,27 +239,53 @@ func (e *Engine) validateRuntimeDirectories() error {
 }
 
 func (e *Engine) supportedDevice() error {
-	data, err := os.ReadFile(e.paths.Version)
-	if err != nil {
-		return err
-	}
-	fields := strings.Split(strings.TrimSpace(string(data)), ",")
-	if len(fields) < 6 || fields[2] != "4.46.23852" {
-		return errors.New("this installer supports Libra Colour firmware 4.46.23852")
-	}
-	model := strings.Split(fields[5], "-")
-	if strings.TrimLeft(model[len(model)-1], "0") != "390" {
-		return errors.New("this installer supports Kobo Libra Colour")
-	}
-	return nil
+	_, err := e.deviceProfile()
+	return err
 }
 
 func (e *Engine) desiredSetup() (map[string]configSnapshot, error) {
+	profile, err := e.deviceProfile()
+	if err != nil {
+		return nil, err
+	}
 	desired := map[string]configSnapshot{}
 	for name, source := range map[string]string{"on-boot": "runtime-boot.sh", "connect": "connect-root.sh", "login": "login-root.sh", "diagnose": "diagnose-root.sh"} {
 		data, err := os.ReadFile(filepath.Join(e.paths.Helpers, source))
 		if err != nil {
 			return nil, err
+		}
+		if name == "connect" {
+			// Specialize the known template during setup. Runtime connection
+			// actions must not read the version file on books storage.
+			const argument = "--hostname=kobo-libra-colour"
+			if strings.Count(string(data), argument) != 1 {
+				return nil, errors.New("connection template has an invalid hostname argument")
+			}
+			modelArgs := "--hostname=" + profile.hostname
+			if profile.netfilterMode != "" {
+				modelArgs += " --netfilter-mode=" + profile.netfilterMode
+			}
+			data = []byte(strings.Replace(string(data), argument, modelArgs, 1))
+			if e.paths.ramMode() {
+				const oldStartup = "if ! pidof tailscaled >/dev/null 2>&1; then\n    /bin/sh /usr/local/tailscale/boot.sh 3>&- || exit 1\nfi"
+				if strings.Count(string(data), oldStartup) != 1 {
+					return nil, errors.New("connection template has an invalid service readiness check")
+				}
+				// A process may exist while LocalAPI/configuration is still
+				// starting. The serialized helper waits for actual readiness.
+				data = []byte(strings.Replace(string(data), oldStartup, "/bin/sh /usr/local/tailscale/boot.sh 3>&- || exit 1", 1))
+				const oldWiFiLoop = `while ! awk '$1 ~ /^wlan/ && $2 == "00000000" && $3 != "00000000" { ready=1 } END { exit !ready }' /proc/net/route; do`
+				if strings.Count(string(data), oldWiFiLoop) != 1 {
+					return nil, errors.New("connection template has an invalid Wi-Fi readiness loop")
+				}
+				data = []byte(strings.Replace(string(data), oldWiFiLoop, "while ! "+shellQuote(e.paths.CoreLink)+" wifi-ready >/dev/null 2>&1; do", 1))
+				data = []byte(strings.ReplaceAll(string(data), "\"$RUNTIME/bin/tailscale\"",
+					shellQuote(filepath.Join(e.paths.binaryDir(), "tailscale"))))
+			}
+		}
+		if name == "diagnose" && e.paths.ramMode() {
+			data = []byte(strings.ReplaceAll(string(data), "/usr/local/tailscale-runtime/bin/tailscale", filepath.Join(e.paths.binaryDir(), "tailscale")))
+			data = []byte(strings.ReplaceAll(string(data), "System storage is active.", "Verified RAM execution is active; private state uses system storage."))
 		}
 		desired[name] = configSnapshot{ID: name, Present: true, Data: data, Mode: 0755}
 	}
@@ -257,7 +294,11 @@ func (e *Engine) desiredSetup() (map[string]configSnapshot, error) {
 	} else if err != nil {
 		return nil, err
 	}
-	desired["rule"] = configSnapshot{ID: "rule", Present: true, Mode: 0644, Data: []byte("ACTION==\"add\", SUBSYSTEM==\"net\", KERNEL==\"wlan*\", RUN+=\"/bin/sh " + filepath.Join(e.paths.Base, "on-boot.sh") + "\"\n")}
+	var rules strings.Builder
+	for _, name := range profile.wifiInterfaces {
+		fmt.Fprintf(&rules, "ACTION==\"add\", SUBSYSTEM==\"net\", KERNEL==\"%s\", RUN+=\"/bin/sh %s\"\n", name, filepath.Join(e.paths.Base, "on-boot.sh"))
+	}
+	desired["rule"] = configSnapshot{ID: "rule", Present: true, Mode: 0644, Data: []byte(rules.String())}
 	if existing, err := snapshot("rule", e.paths.Rules); err != nil {
 		return nil, err
 	} else if existing.Present && (existing.Link != "" || string(existing.Data) != string(desired["rule"].Data)) {
@@ -267,13 +308,19 @@ func (e *Engine) desiredSetup() (map[string]configSnapshot, error) {
 		}
 	}
 	for id, name := range map[string]string{"cli-link": "tailscale", "daemon-link": "tailscaled"} {
-		target := filepath.Join(e.paths.Runtime, "bin", name)
+		target := filepath.Join(e.paths.binaryDir(), name)
 		existing, err := snapshot(id, filepath.Join(e.paths.Links, name))
 		if err != nil {
 			return nil, err
 		}
 		if existing.Present && existing.Link != target {
-			return nil, errors.New("an unrecognized Tailscale binary path was retained")
+			var owned setupRecord
+			knownOld := e.paths.ramMode() && existing.Link == filepath.Join(e.paths.legacyBinDir(), name) &&
+				readJSON(filepath.Join(e.paths.Runtime, "setup.json"), &owned) == nil &&
+				owned.Files[id] == "link:"+existing.Link
+			if !knownOld {
+				return nil, errors.New("an unrecognized Tailscale binary path was retained")
+			}
 		}
 		desired[id] = configSnapshot{ID: id, Present: true, Link: target}
 	}
@@ -292,6 +339,13 @@ func (e *Engine) desiredSetup() (map[string]configSnapshot, error) {
 }
 
 func (e *Engine) Prepare(ctx context.Context) error {
+	if e.paths.ramMode() {
+		return e.prepareBooks(ctx)
+	}
+	return e.prepareSystem(ctx)
+}
+
+func (e *Engine) prepareSystem(ctx context.Context) error {
 	unlock, err := acquireActionLock(e.paths.Lock)
 	if err != nil {
 		return err
@@ -342,10 +396,15 @@ func (e *Engine) Prepare(ctx context.Context) error {
 			return err
 		}
 	}
-	for _, dir := range []string{e.paths.Links, filepath.Dir(e.paths.Rules)} {
-		if err := ensureSystemDirectory(dir, 0755); err != nil {
-			return err
-		}
+	profile, err := e.deviceProfile()
+	if err != nil {
+		return err
+	}
+	if err := ensureSystemDirectory(e.paths.Links, profile.linksMode); err != nil {
+		return err
+	}
+	if err := ensureSystemDirectory(filepath.Dir(e.paths.Rules), 0755); err != nil {
+		return err
 	}
 	desired, err := e.desiredSetup()
 	if err != nil {
@@ -448,6 +507,10 @@ func (e *Engine) Prepare(ctx context.Context) error {
 			}
 		}
 	}
+	return e.commitSetup(ctx, desired, true)
+}
+
+func (e *Engine) commitSetup(ctx context.Context, desired map[string]configSnapshot, clearPayload bool) error {
 	paths := e.configPaths()
 	if err := ctx.Err(); err != nil {
 		return err
@@ -493,6 +556,9 @@ func (e *Engine) Prepare(ctx context.Context) error {
 	}
 	if err := syncDirectory(e.paths.Runtime); err != nil {
 		return err
+	}
+	if !clearPayload {
+		return nil
 	}
 	for _, name := range []string{"release.json", "release.tgz"} {
 		if err := os.Remove(filepath.Join(e.paths.Payload, name)); err != nil && !os.IsNotExist(err) {

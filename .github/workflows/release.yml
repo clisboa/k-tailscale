@@ -44,6 +44,7 @@ jobs:
         run: |
           scripts/build.sh
           scripts/build-helper.sh
+          scripts/build-tun.sh
       - name: Fetch and verify latest official stable Tailscale
         run: |
           mkdir -p build/upstream
@@ -62,7 +63,7 @@ jobs:
       - name: Publish release artifacts
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" dist/KoboRoot.tgz dist/k-tailscale-update.tgz dist/KoboRoot-uninstall.tgz dist/SHA256SUMS dist/update.json dist/update.json.sig --verify-tag --title "k-tailscale $GITHUB_REF_NAME" --generate-notes
+        run: gh release create "$GITHUB_REF_NAME" dist/KoboRoot.tgz dist/k-tailscale-update.tgz dist/KoboRoot-uninstall.tgz dist/SHA256SUMS dist/update.json dist/update.json.sig dist/k-tailscale-tun-source.tar.gz --verify-tag --title "k-tailscale $GITHUB_REF_NAME" --generate-notes
       - uses: actions/upload-pages-artifact@v4
         with:
           path: dist/site
